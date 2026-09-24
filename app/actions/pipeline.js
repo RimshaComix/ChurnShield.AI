@@ -1,5 +1,4 @@
 "use server";
-
 import { revalidatePath } from "next/cache";
 import { prisma } from "../../lib/prisma";
 
@@ -23,7 +22,7 @@ async function fetchWithRetry(url, options, retries = 3, delay = 200) {
 /**
  * Standard Telemetry Inference pipeline executing individual node analysis
  */
-export async function executeTelemetryInference(customerId) {
+export async function executeTelemetryInference(customerId, isFastAPIOffline = false, shouldRevalidate = true) {
   try {
     // 1. Fetch real-time behavioral features from the offline SQLite file
     const customer = await prisma.customer.findUnique({
@@ -43,19 +42,24 @@ export async function executeTelemetryInference(customerId) {
       }
     };
 
-    let mlData;
+    let mlData = null;
     
-    try {
-      // 3. Fire payload at our live running FastAPI service on port 8000 with connection retry policies
-      const response = await fetchWithRetry(`${FASTAPI_URL}/api/v1/predict`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      mlData = await response.json();
-    } catch (apiError) {
-      console.warn(`[FASTAPI_OFFLINE] Fallback activated for customer node ${customerId}:`, apiError.message);
-      
+    // 3. Fire payload at our live running FastAPI service on port 8000 only if backend is online
+    if (!isFastAPIOffline) {
+      try {
+        const response = await fetchWithRetry(`${FASTAPI_URL}/api/v1/predict`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }, 1, 100);
+        mlData = await response.json();
+      } catch (apiError) {
+        console.warn(`[FASTAPI_OFFLINE] Fallback activated for customer node ${customerId}:`, apiError.message);
+      }
+    }
+
+    // 4. Instantaneous Fallback Calculation
+    if (!mlData) {
       let fallbackProbability = 0.05;
       if (customer.complaintCount > 3) fallbackProbability += 0.45;
       if (customer.inactivityDays > 10) fallbackProbability += 0.25;
@@ -90,6 +94,9 @@ export async function executeTelemetryInference(customerId) {
         });
         if (savedLog) break;
       } catch (e) {
+        if (String(e).includes("database is locked")) {
+          await new Promise((r) => setTimeout(r, 40));
+        }
         continue;
       }
     }
@@ -106,7 +113,7 @@ export async function executeTelemetryInference(customerId) {
       }
 
       if (!safeFallbackValue) {
-        throw new Error("Unable to map RiskTier enum. Please check the 'enum RiskTier' definition inside your schema.prisma file.");
+        safeFallbackValue = rawTier === "CRITICAL" || rawTier === "HIGH" ? "CRITICAL" : "STABLE";
       }
 
       savedLog = await prisma.prediction.create({
@@ -119,10 +126,12 @@ export async function executeTelemetryInference(customerId) {
       });
     }
 
-    // 5. Purge router layout caches on demand to update browser views instantly
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/predictions");
-    revalidatePath("/dashboard/segments");
+    // 5. Purge router layout caches on demand to update browser views instantly (only when single execution)
+    if (shouldRevalidate) {
+      revalidatePath("/dashboard");
+      revalidatePath("/dashboard/predictions");
+      revalidatePath("/dashboard/segments");
+    }
 
     return { 
       success: true, 
@@ -160,7 +169,7 @@ export async function exportTelemetryCSVAction() {
 }
 
 /**
- * 📤 IMPORT PIPELINE: Processes CSV raw input and triggers batch inferences directly over encrypted server pipes
+ * 📤 IMPORT PIPELINE: Processes CSV/TSV raw input and triggers batch inferences directly over encrypted server pipes
  */
 export async function importTelemetryCSVAction(csvRawText) {
   try {
@@ -169,8 +178,9 @@ export async function importTelemetryCSVAction(csvRawText) {
     const lines = csvRawText.split(/\r?\n/).filter(line => line.trim() !== "");
     if (lines.length <= 1) throw new Error("No telemetry rows available inside stream payload");
 
-    // Extract headers row boundary
-    const headers = lines[0].split(",").map(h => h.trim());
+    // Dynamic delimiter detection (Comma or Tab)
+    const delimiter = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0].split(delimiter).map(h => h.trim());
     const insertedIds = [];
 
     // Safe regex split to avoid breaking on strings containing internal commas
@@ -178,7 +188,9 @@ export async function importTelemetryCSVAction(csvRawText) {
 
     // Parse data rows sequentially inside model operations
     for (let i = 1; i < lines.length; i++) {
-      const row = lines[i].split(csvSplitRegex).map(val => val.replace(/^"|"$/g, '').trim());
+      const row = delimiter === "\t"
+        ? lines[i].split("\t").map(val => val.trim())
+        : lines[i].split(csvSplitRegex).map(val => val.replace(/^"|"$/g, '').trim());
       
       if (row.length === headers.length && row[0]) {
         const customer = await prisma.customer.upsert({
@@ -203,14 +215,31 @@ export async function importTelemetryCSVAction(csvRawText) {
       }
     }
 
-    // Execute mass batch inferences concurrently using your secure trial pipeline above
-    const batchRuns = insertedIds.map(id => executeTelemetryInference(id));
-    await Promise.all(batchRuns);
+    // Ping FastAPI once upfront to avoid repeating 600 retry requests if offline
+    let isFastAPIOffline = false;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 800);
+      const ping = await fetch(`${FASTAPI_URL}/docs`, { method: "GET", signal: controller.signal });
+      clearTimeout(timeout);
+      if (!ping.ok && ping.status >= 500) isFastAPIOffline = true;
+    } catch {
+      isFastAPIOffline = true;
+      console.warn("[FASTAPI_STATUS] FastAPI backend unreachable. Executing instant local fallback pipeline.");
+    }
 
-    // Refresh layouts across active UI routing segments
+    // Process inferences in controlled batches to eliminate SQLite file locks
+    const CHUNK_SIZE = 15;
+    for (let i = 0; i < insertedIds.length; i += CHUNK_SIZE) {
+      const chunk = insertedIds.slice(i, i + CHUNK_SIZE);
+      await Promise.all(chunk.map(id => executeTelemetryInference(id, isFastAPIOffline, false)));
+    }
+
+    // Refresh layouts across active UI routing segments once after all nodes complete
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/predictions");
     revalidatePath("/dashboard/segments");
+    revalidatePath("/");
 
     return { success: true, batchCount: insertedIds.length };
   } catch (error) {
@@ -220,17 +249,21 @@ export async function importTelemetryCSVAction(csvRawText) {
 }
 
 /**
- * 🗑️ SYSTEM PURGE ACTION: Safely flushes all historical machine learning log rows
+ * 🗑️ SYSTEM PURGE ACTION: Safely flushes all telemetry customers and machine learning predictions
  */
 export async function flushSystemLogsAction() {
   try {
-    // Delete all rows from the prediction table to clear up the duplicates ledger
-    await prisma.prediction.deleteMany();
+    // Delete predictions first to prevent foreign key errors, then delete all customers
+    await prisma.$transaction([
+      prisma.prediction.deleteMany(),
+      prisma.customer.deleteMany(),
+    ]);
     
     // Refresh layout contexts across active dashboard routes
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/predictions");
     revalidatePath("/dashboard/segments");
+    revalidatePath("/");
 
     return { success: true };
   } catch (error) {

@@ -1,7 +1,6 @@
 import { prisma } from "../../../lib/prisma";
 
 export default async function SegmentsPage() {
-  // 1. Fetch real-time system footprints including the latest prediction entry
   const customers = await prisma.customer.findMany({
     include: {
       predictions: {
@@ -12,7 +11,6 @@ export default async function SegmentsPage() {
     orderBy: { monthlySpending: "desc" }
   }) || [];
 
-  // 2. Map customer records onto true cluster segments matching backend output
   const highValueAtRisk = [];
   const dormantCore = [];
   const stableBaseline = [];
@@ -20,7 +18,6 @@ export default async function SegmentsPage() {
   customers.forEach((c) => {
     const latestPrediction = c.predictions[0];
     
-    // Check if the node has been calculated, otherwise use statistical fallbacks
     if (latestPrediction && latestPrediction.shapExplanations) {
       try {
         const hasHighComplaints = c.complaintCount >= 4;
@@ -36,7 +33,6 @@ export default async function SegmentsPage() {
         stableBaseline.push(c);
       }
     } else {
-      // Catch un-scored profiles and organize them safely via baseline heuristics
       if (c.monthlySpending > 1500 && c.complaintCount >= 3) {
         highValueAtRisk.push(c);
       } else if (c.usageFrequency <= 2) {
@@ -51,8 +47,31 @@ export default async function SegmentsPage() {
 
   return (
     <div className="space-y-6 w-full" style={corporateFontFamily}>
-      
-      {/* 1. ACADEMICALLY DEFENSIVE TITLE HEADER */}
+      {/* Exact Custom Scrollbar Definition */}
+      <style>{`
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #9ca3af #f3f4f6;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-button {
+          display: none;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f3f4f6;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #9ca3af;
+          border-radius: 9999px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #6b7280;
+        }
+      `}</style>
+
+      {/* 1. TITLE HEADER */}
       <div className="border-b border-[#567C8D]/20 pb-4">
         <h2 className="text-sm font-bold tracking-tight text-[#C8D9E6] uppercase">
           Customer Behavioral Segmentation
@@ -71,7 +90,7 @@ export default async function SegmentsPage() {
               <span className="text-[10px] font-bold text-[#C8D9E6]/60">Cohort 01</span>
             </div>
             <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">Accounts maintaining high contract values but exhibiting significant retention risk patterns.</p>
-            <div className="pt-2 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto">
+            <div className="pt-2 pr-1 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto custom-scrollbar">
               {highValueAtRisk.map(c => (
                 <div key={c.id} className="flex justify-between border-b border-[#567C8D]/10 pb-1 last:border-0 hover:text-white transition-colors">
                   <span>• {c.accountNode}</span>
@@ -94,7 +113,7 @@ export default async function SegmentsPage() {
               <span className="text-[10px] font-bold text-[#C8D9E6]/60">Cohort 02</span>
             </div>
             <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">Product engagement indicators dropping significantly below baseline usage thresholds.</p>
-            <div className="pt-2 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto">
+            <div className="pt-2 pr-1 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto custom-scrollbar">
               {dormantCore.map(c => (
                 <div key={c.id} className="flex justify-between border-b border-[#567C8D]/10 pb-1 last:border-0 hover:text-white transition-colors">
                   <span>• {c.accountNode}</span>
@@ -117,7 +136,7 @@ export default async function SegmentsPage() {
               <span className="text-[10px] font-bold text-[#C8D9E6]/60">Cohort 03</span>
             </div>
             <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">Healthy retention footprints tracking consistent application metrics with minimal support activity.</p>
-            <div className="pt-2 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto">
+            <div className="pt-2 pr-1 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto custom-scrollbar">
               {stableBaseline.map(c => (
                 <div key={c.id} className="flex justify-between border-b border-[#567C8D]/10 pb-1 last:border-0 hover:text-white transition-colors">
                   <span>• {c.accountNode}</span>
