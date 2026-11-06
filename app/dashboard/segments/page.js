@@ -1,7 +1,19 @@
+import { redirect } from "next/navigation";
 import { prisma } from "../../../lib/prisma";
+import { getSession } from "../../actions/auth";
 
 export default async function SegmentsPage() {
+  const session = await getSession();
+  if (!session?.tenantId) {
+    redirect("/login");
+  }
+
+  const userTenantId = session.tenantId;
+
   const customers = await prisma.customer.findMany({
+    where: {
+      tenantId: userTenantId
+    },
     include: {
       predictions: {
         orderBy: { calculatedAt: "desc" },
@@ -29,7 +41,7 @@ export default async function SegmentsPage() {
         } else {
           stableBaseline.push(c);
         }
-      } catch (e) {
+      } catch {
         stableBaseline.push(c);
       }
     } else {
@@ -47,7 +59,6 @@ export default async function SegmentsPage() {
 
   return (
     <div className="space-y-6 w-full" style={corporateFontFamily}>
-      {/* Exact Custom Scrollbar Definition */}
       <style>{`
         .custom-scrollbar {
           scrollbar-width: thin;
@@ -72,11 +83,18 @@ export default async function SegmentsPage() {
       `}</style>
 
       {/* 1. TITLE HEADER */}
-      <div className="border-b border-[#567C8D]/20 pb-4">
-        <h2 className="text-sm font-bold tracking-tight text-[#C8D9E6] uppercase">
-          Customer Behavioral Segmentation
-        </h2>
-        <p className="text-xs text-[#F5EFEB]/70 mt-0.5">Dynamic customer cohort mapping tracked by behavioral feature matrices</p>
+      <div className="border-b border-[#567C8D]/20 pb-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-bold tracking-tight text-[#C8D9E6] uppercase">
+            Customer Behavioral Segmentation
+          </h2>
+          <p className="text-xs text-[#F5EFEB]/70 mt-0.5">Dynamic customer cohort mapping tracked by behavioral feature matrices</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1 rounded bg-[#2F4156] border border-[#567C8D]/40 text-xs font-mono">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className="text-[#C8D9E6]/70 uppercase text-[10px]">TENANT:</span>
+          <span className="font-bold text-white text-[11px]">{session.tenantName}</span>
+        </div>
       </div>
 
       {/* 2. FULL-WIDTH BEHAVIORAL COHORT MATRIX */}
@@ -100,31 +118,33 @@ export default async function SegmentsPage() {
               {highValueAtRisk.length === 0 && <span className="text-[#C8D9E6]/40 italic block pt-2 text-[11px]">No matching accounts identified</span>}
             </div>
           </div>
-          <div className="text-[10px] font-bold text-rose-300 pt-3 border-t border-[#567C8D]/20 tracking-wider">
-            HIGH PRIORITY RETENTION ACTION REQUIRED
+          <div className="border-t border-[#567C8D]/20 pt-3 mt-4 flex justify-between items-center text-[11px] font-bold text-[#C8D9E6]">
+            <span>TOTAL POOL:</span>
+            <span>{highValueAtRisk.length} ACCOUNTS</span>
           </div>
         </div>
 
-        {/* Cohort Card 02: Inactive Users */}
+        {/* Cohort Card 02: Dormant Core Users */}
         <div className="border border-[#567C8D]/20 rounded-md p-5 bg-[#2F4156] flex flex-col justify-between min-h-[260px]">
           <div className="space-y-3">
             <div className="flex items-center justify-between border-b border-[#567C8D]/30 pb-2">
-              <span className="text-xs font-bold text-amber-300">Inactive Core Users</span>
+              <span className="text-xs font-bold text-amber-300">Dormant Core Accounts</span>
               <span className="text-[10px] font-bold text-[#C8D9E6]/60">Cohort 02</span>
             </div>
-            <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">Product engagement indicators dropping significantly below baseline usage thresholds.</p>
+            <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">Stable baseline users showing high inactivity days coupled with decreased interaction frequency.</p>
             <div className="pt-2 pr-1 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto custom-scrollbar">
               {dormantCore.map(c => (
                 <div key={c.id} className="flex justify-between border-b border-[#567C8D]/10 pb-1 last:border-0 hover:text-white transition-colors">
                   <span>• {c.accountNode}</span>
-                  <span className="text-[#C8D9E6]/70">{c.inactivityDays} Days Idle</span>
+                  <span className="text-[#C8D9E6]/70">{c.inactivityDays}d Inactive</span>
                 </div>
               ))}
               {dormantCore.length === 0 && <span className="text-[#C8D9E6]/40 italic block pt-2 text-[11px]">No matching accounts identified</span>}
             </div>
           </div>
-          <div className="text-[10px] font-bold text-amber-300 pt-3 border-t border-[#567C8D]/20 tracking-wider">
-            ENGAGEMENT OUTREACH STRATEGY APPLIED
+          <div className="border-t border-[#567C8D]/20 pt-3 mt-4 flex justify-between items-center text-[11px] font-bold text-[#C8D9E6]">
+            <span>TOTAL POOL:</span>
+            <span>{dormantCore.length} ACCOUNTS</span>
           </div>
         </div>
 
@@ -132,22 +152,23 @@ export default async function SegmentsPage() {
         <div className="border border-[#567C8D]/20 rounded-md p-5 bg-[#2F4156] flex flex-col justify-between min-h-[260px]">
           <div className="space-y-3">
             <div className="flex items-center justify-between border-b border-[#567C8D]/30 pb-2">
-              <span className="text-xs font-bold text-emerald-300">Stable Baseline Group</span>
+              <span className="text-xs font-bold text-emerald-300">Stable Baseline Profile</span>
               <span className="text-[10px] font-bold text-[#C8D9E6]/60">Cohort 03</span>
             </div>
-            <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">Healthy retention footprints tracking consistent application metrics with minimal support activity.</p>
+            <p className="text-xs text-[#F5EFEB]/70 leading-relaxed">High-engagement accounts maintaining continuous platform interaction and minimal support tickets.</p>
             <div className="pt-2 pr-1 space-y-2 text-xs font-medium text-[#F5EFEB]/90 max-h-36 overflow-y-auto custom-scrollbar">
               {stableBaseline.map(c => (
                 <div key={c.id} className="flex justify-between border-b border-[#567C8D]/10 pb-1 last:border-0 hover:text-white transition-colors">
                   <span>• {c.accountNode}</span>
-                  <span className="text-emerald-300">Stable Node</span>
+                  <span className="text-[#C8D9E6]/70">${Number(c.monthlySpending).toFixed(0)}/mo</span>
                 </div>
               ))}
               {stableBaseline.length === 0 && <span className="text-[#C8D9E6]/40 italic block pt-2 text-[11px]">No matching accounts identified</span>}
             </div>
           </div>
-          <div className="text-[10px] font-bold text-emerald-300 pt-3 border-t border-[#567C8D]/20 tracking-wider">
-            STANDARD CONTINUOUS MONITORING ACTIVE
+          <div className="border-t border-[#567C8D]/20 pt-3 mt-4 flex justify-between items-center text-[11px] font-bold text-[#C8D9E6]">
+            <span>TOTAL POOL:</span>
+            <span>{stableBaseline.length} ACCOUNTS</span>
           </div>
         </div>
 

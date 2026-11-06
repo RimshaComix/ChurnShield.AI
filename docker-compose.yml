@@ -1,0 +1,77 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: churnshield-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Dfab942fc
+      POSTGRES_DB: churnshield_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d churnshield_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - churnshield-network
+
+  ml_backend:
+    build:
+      context: ./ml_backend
+      dockerfile: Dockerfile
+    container_name: churnshield-ml-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml_backend/models:/app/models
+    environment:
+      PORT: 8000
+      PYTHONUNBUFFERED: 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - churnshield-network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: churnshield-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+      DATABASE_URL: postgresql://postgres:Dfab942fc@postgres:5432/churnshield_db?schema=public
+      FASTAPI_SERVICE_URL: http://ml_backend:8000
+      NEXT_PUBLIC_FASTAPI_URL: http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml_backend:
+        condition: service_healthy
+    networks:
+      - churnshield-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  churnshield-network:
+    driver: bridge

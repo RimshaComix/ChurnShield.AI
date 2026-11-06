@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "../../lib/prisma";
+import { dispatchCriticalRiskAlert } from "../../lib/notifications";
 
 const FASTAPI_URL = process.env.FASTAPI_SERVICE_URL || "http://127.0.0.1:8000";
 
@@ -11,6 +12,16 @@ export async function resolveDefaultTenantId(preferredTenantId = null) {
       where: { id: preferredTenantId }
     });
     if (existing) return existing.id;
+  }
+
+  try {
+    const { getSession } = await import("./auth");
+    const session = await getSession();
+    if (session?.tenantId) {
+      return session.tenantId;
+    }
+  } catch {
+    // Non-blocking fallback if auth context is not available
   }
 
   const firstTenant = await prisma.tenant.findFirst({
@@ -55,7 +66,8 @@ async function fetchWithRetry(url, options, retries = 3, delay = 200) {
 export async function executeTelemetryInference(customerId, isFastAPIOffline = false, shouldRevalidate = true, explicitTenantId = null) {
   try {
     const customer = await prisma.customer.findUnique({
-      where: { id: customerId }
+      where: { id: customerId },
+      include: { tenant: true }
     });
 
     if (!customer) {
@@ -139,6 +151,24 @@ export async function executeTelemetryInference(customerId, isFastAPIOffline = f
 
     if (!savedLog) {
       throw new Error("Failed to persist prediction record to database");
+    }
+
+    // Trigger high-priority critical risk alert broker asynchronously
+    if (sanitizedTier === "HIGH") {
+      const alertPayload = {
+        accountNode: customer.accountNode,
+        industry: customer.industry || "UNKNOWN",
+        monthlySpending: Number(customer.monthlySpending) || 0,
+        probability: Number(mlData.churn_probability) || 0,
+        riskTier: String(mlData.risk_tier || "CRITICAL").toUpperCase(),
+        shapExplanations: mlData.shap_values,
+        tenantName: customer.tenant?.name || "Corporate Enterprise"
+      };
+
+      // Non-blocking detached execution wrapper ensures pipeline throughput is never blocked
+      dispatchCriticalRiskAlert(alertPayload).catch((brokerErr) => {
+        console.error("[NOTIFICATION_BROKER_BACKGROUND_ERROR]", brokerErr);
+      });
     }
 
     if (shouldRevalidate) {
@@ -276,10 +306,23 @@ export async function importTelemetryCSVAction(csvRawText, explicitTenantId = nu
 
 export async function flushSystemLogsAction(explicitTenantId = null) {
   try {
-    if (explicitTenantId) {
+    let targetTenantId = explicitTenantId;
+    if (!targetTenantId) {
+      try {
+        const { getSession } = await import("./auth");
+        const session = await getSession();
+        if (session?.tenantId) {
+          targetTenantId = session.tenantId;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (targetTenantId) {
       await prisma.$transaction([
-        prisma.prediction.deleteMany({ where: { tenantId: explicitTenantId } }),
-        prisma.customer.deleteMany({ where: { tenantId: explicitTenantId } })
+        prisma.prediction.deleteMany({ where: { tenantId: targetTenantId } }),
+        prisma.customer.deleteMany({ where: { tenantId: targetTenantId } })
       ]);
     } else {
       await prisma.$transaction([

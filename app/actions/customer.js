@@ -2,17 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "../../lib/prisma";
-import { verifyRole } from "./auth";
+import { verifyRole, getSession } from "./auth";
+import { resolveDefaultTenantId } from "./pipeline";
 
-// --- CUSTOMER CRUD OPERATIONS WITH RBAC ENFORCEMENT ---
+// --- CUSTOMER CRUD OPERATIONS WITH RBAC & TENANT ENFORCEMENT ---
 
 export async function createCustomer(formData) {
   const isAdmin = await verifyRole("ADMIN");
   if (!isAdmin) return { success: false, error: "UNAUTHORIZED_ACCESS_LEVEL" };
 
   try {
+    const session = await getSession();
+    const tenantId = formData.tenantId || session?.tenantId || (await resolveDefaultTenantId());
+
     const node = await prisma.customer.create({
       data: {
+        tenantId,
         accountNode: formData.accountNode,
         industry: formData.industry,
         monthlySpending: parseFloat(formData.monthlySpending),
@@ -32,15 +37,31 @@ export async function deleteCustomer(id) {
   const isAdmin = await verifyRole("ADMIN");
   if (!isAdmin) return { success: false, error: "UNAUTHORIZED_ACCESS_LEVEL" };
 
-  await prisma.customer.delete({ where: { id } });
-  revalidatePath("/dashboard");
-  return { success: true };
+  try {
+    const session = await getSession();
+    if (session?.tenantId) {
+      const existing = await prisma.customer.findUnique({ where: { id } });
+      if (!existing || existing.tenantId !== session.tenantId) {
+        return { success: false, error: "UNAUTHORIZED_TENANT_RECORD" };
+      }
+    }
+
+    await prisma.customer.delete({ where: { id } });
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
 // --- CLV & FINANCIAL REVENUE LOSS RISK ANALYSIS ENGINE ---
 
 export async function calculateRevenueRiskMetrics() {
+  const session = await getSession();
+  const whereClause = session?.tenantId ? { tenantId: session.tenantId } : {};
+
   const customers = await prisma.customer.findMany({
+    where: whereClause,
     include: { predictions: { orderBy: { calculatedAt: "desc" }, take: 1 } }
   });
 

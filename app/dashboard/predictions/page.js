@@ -1,32 +1,52 @@
+import { redirect } from "next/navigation";
 import { prisma } from "../../../lib/prisma";
-import ShapDrawer from "../../components/ShapDrawer"; // Accurate relative folder hop reference
+import { getSession } from "../../actions/auth";
+import ShapDrawer from "../../components/ShapDrawer";
 
 export default async function PredictionsPage() {
-  // Fetch prediction records along with parent company info from local data storage
+  // 1. Authenticate user session and retrieve corporate tenant boundary
+  const session = await getSession();
+  if (!session?.tenantId) {
+    redirect("/login");
+  }
+
+  const userTenantId = session.tenantId;
+
+  // 2. Fetch prediction records strictly filtered by corporate tenant identification
   const predictions = await prisma.prediction.findMany({
+    where: {
+      tenantId: userTenantId
+    },
     include: { customer: true },
     orderBy: { calculatedAt: "desc" }
   }) || [];
 
-  // Define corporate style mappings directly matching our 5-color enterprise palette
-  // Outer interior containers usually live within the global theme background set on layout blocks
   const corporateFontFamily = { fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" };
 
   return (
     <div className="space-y-6 w-full" style={corporateFontFamily}>
       
       {/* 1. ACADEMICALLY DEFENSIVE TITLE HEADER */}
-      <div className="border-b border-[#567C8D]/20 pb-4">
-        <h2 className="text-sm font-bold tracking-tight text-[#C8D9E6] uppercase">
-          Historical Prediction Records
-        </h2>
-        <p className="text-xs text-[#F5EFEB]/70 mt-0.5">Historical sequence log of active machine learning model inferences</p>
+      <div className="border-b border-[#567C8D]/20 pb-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-bold tracking-tight text-[#C8D9E6] uppercase">
+            Historical Prediction Records
+          </h2>
+          <p className="text-xs text-[#F5EFEB]/70 mt-0.5">
+            Historical sequence log of active machine learning model inferences
+          </p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1 rounded bg-[#2F4156] border border-[#567C8D]/40 text-xs font-mono">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className="text-[#C8D9E6]/70 uppercase text-[10px]">TENANT:</span>
+          <span className="font-bold text-white text-[11px]">{session.tenantName}</span>
+        </div>
       </div>
 
       {predictions.length === 0 ? (
         /* Empty Database State View Block */
         <div className="border border-dashed border-[#567C8D]/30 rounded-md p-12 text-center text-xs font-bold uppercase tracking-wider text-[#C8D9E6]/60 bg-[#567C8D]/10">
-          No Active Inference Records Detected. Navigate to the execution console hub to parse data.
+          No Active Inference Records Detected for {session.tenantName}. Navigate to the execution console hub to parse data.
         </div>
       ) : (
         /* 2. FULL-WIDTH ENTERPRISE INFERENCE LOG DATA MATRIX */
@@ -59,7 +79,6 @@ export default async function PredictionsPage() {
                         {probabilityPercent}%
                       </td>
                       <td className="py-3.5">
-                        {/* Status badge nodes utilizing palette weights */}
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                           normalizedTier === "HIGH" || normalizedTier === "CRITICAL"
                             ? "bg-rose-500/10 text-rose-300 border-rose-500/20" 
@@ -71,7 +90,6 @@ export default async function PredictionsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 text-right pr-2">
-                        {/* Mount the interactive SHAP local factor drawer item */}
                         <ShapDrawer shapData={log.shapExplanations} />
                       </td>
                     </tr>

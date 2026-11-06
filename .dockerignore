@@ -1,0 +1,35 @@
+# Dependency and build artifacts
+node_modules
+.next
+out
+build
+dist
+
+# Version control
+.git
+.gitignore
+
+# Environment configurations
+.env*.local
+
+# Local SQLite databases
+*.db
+*.db-journal
+dev.db*
+
+# Python backend virtual environments & caches
+ml_backend/venv
+ml_backend/.venv
+ml_backend/__pycache__
+__pycache__
+*.pyc
+
+# IDE and OS metadata
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+

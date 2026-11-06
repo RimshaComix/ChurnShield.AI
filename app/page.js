@@ -63,6 +63,14 @@ export default function Home() {
               {isDark ? "Light Presentation" : "Dark Presentation"}
             </button>
             <Link 
+              href="/login" 
+              className={`text-xs font-bold px-3 py-1.5 rounded border transition-colors ${
+                isDark ? "border-[#567C8D]/40 text-[#C8D9E6] hover:text-white hover:bg-[#567C8D]/20" : "border-[#C8D9E6] text-[#567C8D] hover:bg-[#C8D9E6]/20"
+              }`}
+            >
+              Sign In
+            </Link>
+            <Link 
               href="/dashboard" 
               className={`text-xs font-bold px-4 py-1.5 rounded transition-colors ${
                 isDark ? "bg-[#567C8D] text-white hover:bg-[#4a6b7a]" : "bg-[#2F4156] text-white hover:bg-[#233142]"

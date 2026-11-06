@@ -1,16 +1,29 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "../../lib/prisma";
+import { getSession } from "../actions/auth";
 import AnalyzeButton from "../components/AnalyzeButton";
 import DataPanel from "../components/DataPanel";
 import ShapAnalyticsPanel from "../components/ShapAnalyticsPanel";
 
 export default async function DashboardPage({ searchParams }) {
-  // 1. Unpack async search parameters safely from URL state router context
+  // 1. Authenticate user session and retrieve corporate tenant boundary
+  const session = await getSession();
+  if (!session?.tenantId) {
+    redirect("/login");
+  }
+
+  const userTenantId = session.tenantId;
+
+  // 2. Unpack async search parameters safely from URL router context
   const resolvedParams = await searchParams;
   const activeNodeId = resolvedParams?.node || null;
 
-  // 2. Fetch real-time telemetry footprints including ALL prediction history entries
+  // 3. Fetch real-time telemetry footprints strictly scoped to the active corporate tenant
   const customers = await prisma.customer.findMany({
+    where: {
+      tenantId: userTenantId
+    },
     include: {
       predictions: {
         orderBy: { calculatedAt: "desc" }
@@ -19,7 +32,7 @@ export default async function DashboardPage({ searchParams }) {
     orderBy: { createdAt: "desc" }
   }) || [];
 
-  // 3. Compute Executive Dashboard KPIs & Filter Alert Matrices
+  // 4. Compute Executive Dashboard KPIs & Filter Alert Matrices
   let totalPortfolioValue = 0;
   let estimatedRevenueLoss = 0;
   let activeCustomerNode = null;
@@ -34,14 +47,12 @@ export default async function DashboardPage({ searchParams }) {
     const spending = Number(c.monthlySpending);
     totalPortfolioValue += spending;
 
-    // Fixed safe array indexing reference to prevent parsing evaluation crashes
     const latestPrediction = c.predictions?.[0] || null;
     const probability = latestPrediction ? latestPrediction.churnProbability : (c.complaintCount > 3 ? 0.45 : 0.05);
     const tier = latestPrediction ? String(latestPrediction.riskClassification).toUpperCase() : (probability >= 0.45 ? "CRITICAL" : "STABLE");
 
     estimatedRevenueLoss += spending * probability;
 
-    // Track active threshold state metrics categories
     if (tier === "CRITICAL" || tier === "HIGH") {
       criticalAlertsCount++;
       if (realTimeAlertsCollection.length < 3) {
@@ -58,17 +69,33 @@ export default async function DashboardPage({ searchParams }) {
       stableCount++;
     }
 
-    // Capture target dataset reference to feed the analytical sidebar component
     if (c.id === activeNodeId) {
       activeCustomerNode = c;
       activePredictionLogsList = c.predictions || [];
     }
   });
 
-  const aggregateRetentionRate = customers.length > 0 ? (((stableCount + elevatedCount) / customers.length) * 100).toFixed(1) : "100.0";
+  const aggregateRetentionRate = customers.length > 0
+    ? (((stableCount + elevatedCount) / customers.length) * 100).toFixed(1)
+    : "100.0";
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+
+      {/* 🏢 CORPORATE TENANT BOUNDARY BANNER */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 text-xs font-mono">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          <span className="text-zinc-400 uppercase tracking-wider">TENANT PARTITION:</span>
+          <span className="font-bold text-zinc-100">{session.tenantName}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+            {session.role}
+          </span>
+        </div>
+        <div className="text-[11px] text-zinc-500">
+          Supervised Account Records: <span className="text-zinc-200 font-bold">{customers.length}</span>
+        </div>
+      </div>
 
       {/* 📊 EXECUTIVE KPI DASHBOARD SUMMARY ANCHOR */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -132,10 +159,9 @@ export default async function DashboardPage({ searchParams }) {
         <section className="border border-zinc-900 rounded-xl p-5 bg-zinc-900/5 lg:col-span-2 space-y-4">
           <div>
             <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-zinc-200">LIVE PLATFORM FOOTPRINT MONITOR</h3>
-            <p className="text-[11px] text-zinc-500">Active records tracking contract allocations and operational metrics</p>
+            <p className="text-[11px] text-zinc-500">Active records tracking contract allocations and operational metrics for {session.tenantName}</p>
           </div>
 
-          {/* Conditional Layout Switching Logic block */}
           {customers.length > 0 ? (
             <div className="overflow-x-auto text-[11px] font-mono uppercase">
               <table className="w-full text-left border-collapse">
@@ -158,7 +184,6 @@ export default async function DashboardPage({ searchParams }) {
                             : "hover:bg-zinc-900/20"
                           }`}
                       >
-                        {/* Clickable Area: Routing selection parameter triggers state rehydration */}
                         <td className="py-3.5 font-bold pl-2">
                           <Link href={`?node=${node.id}`} className="block text-zinc-100 group-hover:text-white">
                             {node.accountNode} {isSelected && <span className="text-[9px] text-zinc-500">{"[SELECTED]"}</span>}
@@ -175,7 +200,6 @@ export default async function DashboardPage({ searchParams }) {
                           </Link>
                         </td>
                         <td className="py-3.5 text-right pr-2">
-                          {/* Interactive analyzer client trigger */}
                           <AnalyzeButton customerId={node.id} />
                         </td>
                       </tr>
@@ -185,13 +209,12 @@ export default async function DashboardPage({ searchParams }) {
               </table>
             </div>
           ) : (
-            /* 🖥️ STYLED INDUSTRIAL MATRIX GRID FALLBACK IF RECORDS === 0 */
             <div className="border border-dashed border-zinc-900 rounded-lg p-8 bg-zinc-950/20 flex flex-col items-center justify-center min-h-[220px] text-center space-y-3 animate-in fade-in duration-300">
               <div className="text-zinc-600 font-bold uppercase tracking-widest text-[10px]">
-                {"// ERROR: PLATFORM_DATABASE_EMPTY"}
+                {"// ERROR: TENANT_DATABASE_EMPTY"}
               </div>
               <p className="text-zinc-500 text-[11px] max-w-sm leading-relaxed font-mono">
-                Zero analytical footprint models detected inside standard system storage. Ingest an external telemetry dataset using the dropzone module utility framework above to hydrate layout indicators.
+                Zero analytical footprint models detected for {session.tenantName}. Ingest an external telemetry dataset using the dropzone module utility framework above to hydrate layout indicators.
               </p>
               <div className="text-[9px] text-zinc-600 uppercase font-mono tracking-tighter animate-pulse">
                 Awaiting Stream Payload Ingestion...
