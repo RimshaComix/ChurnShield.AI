@@ -164,32 +164,34 @@ export default function LoginPage() {
             </form>
 
             {/* Quick Tenant Switcher Presets */}
-            <div className="pt-4 border-t border-[#567C8D]/20 space-y-2.5">
-              <div className="flex items-center justify-between text-[10px] font-mono text-[#C8D9E6]/70 uppercase">
-                <span>BENCHMARK TENANT PROFILES:</span>
-                <span className="text-zinc-400">1-CLICK HYDRATE</span>
+            {process.env.NODE_ENV !== 'production' && (
+              <div className="pt-4 border-t border-[#567C8D]/20 space-y-2.5">
+                <div className="flex items-center justify-between text-[10px] font-mono text-[#C8D9E6]/70 uppercase">
+                  <span>BENCHMARK TENANT PROFILES:</span>
+                  <span className="text-zinc-400">1-CLICK HYDRATE</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset("admin@airtel-enterprise.com", "admin_secure_password")}
+                    disabled={isPending}
+                    className="p-2 rounded border border-[#567C8D]/30 bg-[#1e2a38] hover:bg-[#567C8D]/20 hover:border-[#567C8D]/60 text-left transition-all group"
+                  >
+                    <div className="font-bold text-white group-hover:text-emerald-300">Airtel Enterprise</div>
+                    <div className="text-[#C8D9E6]/60 truncate">Role: ADMIN</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset("analyst@alpha-fintech.com", "analyst_secure_password")}
+                    disabled={isPending}
+                    className="p-2 rounded border border-[#567C8D]/30 bg-[#1e2a38] hover:bg-[#567C8D]/20 hover:border-[#567C8D]/60 text-left transition-all group"
+                  >
+                    <div className="font-bold text-white group-hover:text-cyan-300">Alpha Fintech</div>
+                    <div className="text-[#C8D9E6]/60 truncate">Role: ANALYST</div>
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset("admin@airtel-enterprise.com", "admin_secure_password")}
-                  disabled={isPending}
-                  className="p-2 rounded border border-[#567C8D]/30 bg-[#1e2a38] hover:bg-[#567C8D]/20 hover:border-[#567C8D]/60 text-left transition-all group"
-                >
-                  <div className="font-bold text-white group-hover:text-emerald-300">Airtel Enterprise</div>
-                  <div className="text-[#C8D9E6]/60 truncate">Role: ADMIN</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset("analyst@alpha-fintech.com", "analyst_secure_password")}
-                  disabled={isPending}
-                  className="p-2 rounded border border-[#567C8D]/30 bg-[#1e2a38] hover:bg-[#567C8D]/20 hover:border-[#567C8D]/60 text-left transition-all group"
-                >
-                  <div className="font-bold text-white group-hover:text-cyan-300">Alpha Fintech</div>
-                  <div className="text-[#C8D9E6]/60 truncate">Role: ANALYST</div>
-                </button>
-              </div>
-            </div>
+            )}
 
           </div>
 

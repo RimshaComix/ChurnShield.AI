@@ -48,6 +48,19 @@ export default async function DashboardPage({ searchParams }) {
     totalPortfolioValue += spending;
 
     const latestPrediction = c.predictions?.[0] || null;
+    if (latestPrediction && latestPrediction.shapExplanations) {
+      try {
+        const parsedShap = typeof latestPrediction.shapExplanations === "string"
+          ? JSON.parse(latestPrediction.shapExplanations)
+          : latestPrediction.shapExplanations;
+        if (parsedShap?.recommendations && !latestPrediction.recommendations) {
+          latestPrediction.recommendations = parsedShap.recommendations;
+        }
+      } catch {
+        // Fallback gracefully if parsing fails
+      }
+    }
+
     const probability = latestPrediction ? latestPrediction.churnProbability : (c.complaintCount > 3 ? 0.45 : 0.05);
     const tier = latestPrediction ? String(latestPrediction.riskClassification).toUpperCase() : (probability >= 0.45 ? "CRITICAL" : "STABLE");
 
@@ -60,7 +73,7 @@ export default async function DashboardPage({ searchParams }) {
           node: c,
           loss: spending * probability,
           prob: probability,
-          rec: c.complaintCount > 3 ? "EXEC_RENEWAL_BUNDLE" : "SERVICE_CREDIT_WAIVER"
+          rec: c.complaintCount > 3 ? "HBR_CARE_ESCALATION_PROTOCOL" : "GARTNER_VALUE_ASSURANCE_WAIVER"
         });
       }
     } else if (tier === "ELEVATED" || tier === "MEDIUM") {
